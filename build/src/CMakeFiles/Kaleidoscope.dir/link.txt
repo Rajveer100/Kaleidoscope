@@ -1,0 +1,2 @@
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ar qc libKaleidoscope.a CMakeFiles/Kaleidoscope.dir/ASTExpr.cpp.o CMakeFiles/Kaleidoscope.dir/Lexer.cpp.o CMakeFiles/Kaleidoscope.dir/Logger.cpp.o CMakeFiles/Kaleidoscope.dir/MainDriver.cpp.o CMakeFiles/Kaleidoscope.dir/Parser.cpp.o
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ranlib libKaleidoscope.a

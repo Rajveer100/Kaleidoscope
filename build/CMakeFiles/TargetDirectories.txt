@@ -1,0 +1,10 @@
+/Users/rajveersingh/Desktop/CompilerDevelopment/Kaleidoscope/build/CMakeFiles/intrinsics_gen.dir
+/Users/rajveersingh/Desktop/CompilerDevelopment/Kaleidoscope/build/CMakeFiles/omp_gen.dir
+/Users/rajveersingh/Desktop/CompilerDevelopment/Kaleidoscope/build/CMakeFiles/acc_gen.dir
+/Users/rajveersingh/Desktop/CompilerDevelopment/Kaleidoscope/build/CMakeFiles/RISCVTargetParserTableGen.dir
+/Users/rajveersingh/Desktop/CompilerDevelopment/Kaleidoscope/build/CMakeFiles/edit_cache.dir
+/Users/rajveersingh/Desktop/CompilerDevelopment/Kaleidoscope/build/CMakeFiles/rebuild_cache.dir
+/Users/rajveersingh/Desktop/CompilerDevelopment/Kaleidoscope/build/src/CMakeFiles/Kaleidoscope.dir
+/Users/rajveersingh/Desktop/CompilerDevelopment/Kaleidoscope/build/src/CMakeFiles/MainDriver.dir
+/Users/rajveersingh/Desktop/CompilerDevelopment/Kaleidoscope/build/src/CMakeFiles/edit_cache.dir
+/Users/rajveersingh/Desktop/CompilerDevelopment/Kaleidoscope/build/src/CMakeFiles/rebuild_cache.dir
