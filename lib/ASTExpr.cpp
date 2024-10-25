@@ -12,6 +12,7 @@
 #include "CodeGen.h"
 #include "Logger.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Function.h"
 
 llvm::Value *NumberExprAST::codegen() {
   return llvm::ConstantFP::get(*CodeGen::Context, llvm::APFloat(Val));
@@ -48,9 +49,22 @@ llvm::Value *BinaryExprAST::codegen() {
   }
 }
 
+llvm::Function *getFunction(std::string Name) {
+  // Check if the function has already been added to the current module.
+  if (auto *F = CodeGen::Module->getFunction(Name))
+    return F;
+
+  // If not, check if there is an existing prototype.
+  auto FI = CodeGen::FunctionProtos.find(Name);
+  if (FI != CodeGen::FunctionProtos.end())
+    return FI->second->codegen();
+
+  return nullptr;
+}
+
 llvm::Value *CallExprAST::codegen() {
   // Look up name of function in global module table.
-  llvm::Function *CalleeF = CodeGen::Module->getFunction(Callee);
+  llvm::Function *CalleeF = getFunction(Callee);
   if (!CalleeF)
     return Logger::LogErrorV("Unknown function referenced");
 
@@ -89,10 +103,9 @@ llvm::Function *ProtoTypeAST::codegen() {
 }
 
 llvm::Function *FunctionAST::codegen() {
-  llvm::Function *Function = CodeGen::Module->getFunction(Proto->getName());
-
-  if (!Function)
-    Function = Proto->codegen();
+  auto &P = *Proto;
+  CodeGen::FunctionProtos[Proto->getName()] = std::move(Proto);
+  llvm::Function *Function = getFunction(P.getName());
 
   if (!Function)
     return nullptr;
@@ -116,6 +129,10 @@ llvm::Function *FunctionAST::codegen() {
 
     // Validate the generated code, checking for consistency.
     llvm::verifyFunction(*Function);
+
+    // Optimize the function.
+    CodeGen::FPM->run(*Function, *CodeGen::FAM);
+
     return Function;
   }
 

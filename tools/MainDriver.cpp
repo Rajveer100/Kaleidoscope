@@ -9,10 +9,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "CodeGen.h"
+#include "KaleidoscopeJIT.h"
 #include "Lexer.h"
 #include "Parser.h"
+#include "llvm/Support/TargetSelect.h"
 
 int main() {
+  llvm::InitializeNativeTarget();
+  llvm::InitializeNativeTargetAsmPrinter();
+  llvm::InitializeNativeTargetAsmParser();
+
   // Install standard binary operators.
   BinOpPrecedence::init();
 
@@ -20,8 +26,10 @@ int main() {
   fprintf(stderr, "ready> ");
   Lexer::getNextToken();
 
+  CodeGen::JIT = CodeGen::ExitOnError(llvm::orc::KaleidoscopeJIT::Create());
+
   // Make the module, which holds all the code.
-  Parser::initialiseModule();
+  Parser::initialiseModuleAndPassManager();
 
   // Run the main loop.
   Parser::mainLoop();

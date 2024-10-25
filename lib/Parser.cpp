@@ -9,8 +9,22 @@
 //===----------------------------------------------------------------------===//
 
 #include "Parser.h"
+#include "ASTExpr.h"
 #include "CodeGen.h"
 #include "Lexer.h"
+#include "Logger.h"
+#include "llvm/Analysis/CGSCCPassManager.h"
+#include "llvm/Analysis/LoopAnalysisManager.h"
+#include "llvm/ExecutionEngine/Orc/ThreadSafeModule.h"
+#include "llvm/IR/PassInstrumentation.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/StandardInstrumentations.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Transforms/Scalar/Reassociate.h"
+#include "llvm/Transforms/Scalar/SimplifyCFG.h"
 
 std::unique_ptr<ExprAST> Parser::parseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(Lexer::NumVal);
@@ -160,7 +174,8 @@ std::unique_ptr<ProtoTypeAST> Parser::parseExtern() {
 std::unique_ptr<FunctionAST> Parser::parseTopLevelExpr() {
   if (auto E = parseExpression()) {
     // Make anonymous Proto.
-    auto Proto = std::make_unique<ProtoTypeAST>("", std::vector<std::string>());
+    auto Proto = std::make_unique<ProtoTypeAST>("__anon_expr",
+                                                std::vector<std::string>());
     return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
   }
   return nullptr;
@@ -168,10 +183,14 @@ std::unique_ptr<FunctionAST> Parser::parseTopLevelExpr() {
 
 void Parser::handleDefinition() {
   if (auto FnAST = parseDefinition()) {
-    if (auto FnIR = FnAST->codegen()) {
+    if (auto *FnIR = FnAST->codegen()) {
       fprintf(stderr, "Read a function definition:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
+
+      CodeGen::ExitOnError(CodeGen::JIT->addModule(llvm::orc::ThreadSafeModule(
+          std::move(CodeGen::Module), std::move(CodeGen::Context))));
+      initialiseModuleAndPassManager();
     }
   } else {
     // Skip token for error recovery.
@@ -185,6 +204,7 @@ void Parser::handleExtern() {
       fprintf(stderr, "Read extern:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
+      CodeGen::FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
     // Skip token for error recovery.
@@ -195,13 +215,30 @@ void Parser::handleExtern() {
 void Parser::handleTopLevelExpression() {
   // Evaluate top-level expressions as an anonymous function.
   if (auto FnAST = parseTopLevelExpr()) {
-    if (auto *FnIR = FnAST->codegen()) {
-      fprintf(stderr, "Read top-level expression:\n");
-      FnIR->print(llvm::errs());
-      fprintf(stderr, "\n");
+    if (FnAST->codegen()) {
+      auto RT = CodeGen::JIT->getMainJITDylib().createResourceTracker();
+
+      auto TSM = llvm::orc::ThreadSafeModule(std::move(CodeGen::Module),
+                                             std::move(CodeGen::Context));
+      CodeGen::ExitOnError(CodeGen::JIT->addModule(std::move(TSM), RT));
+      initialiseModuleAndPassManager();
+
+      auto ExprSymbol =
+          CodeGen::ExitOnError(CodeGen::JIT->lookup("__anon_expr"));
+
+      double (*FP)() = ExprSymbol.getAddress().toPtr<double (*)()>();
+      fprintf(stderr, "Evaluated to %f\n", FP());
+
+      // Without JIT:
+      //
+      // fprintf(stderr, "Read top-level expression:\n");
+      // FnIR->print(llvm::errs());
+      // fprintf(stderr, "\n");
 
       // Remove the anonymous expression.
-      FnIR->eraseFromParent();
+      // FnIR->eraseFromParent();
+
+      CodeGen::ExitOnError(RT->remove());
     }
   } else {
     // Skip token for error recovery.
@@ -209,14 +246,43 @@ void Parser::handleTopLevelExpression() {
   }
 }
 
-void Parser::initialiseModule() {
+void Parser::initialiseModuleAndPassManager() {
   // Open a new context and module.
   CodeGen::Context = std::make_unique<llvm::LLVMContext>();
   CodeGen::Module =
       std::make_unique<llvm::Module>("KaleidoscopeJIT", *CodeGen::Context);
+  CodeGen::Module->setDataLayout(CodeGen::JIT->getDataLayout());
 
   // Create a new builder for the module.
   CodeGen::Builder = std::make_unique<llvm::IRBuilder<>>(*CodeGen::Context);
+
+  // Create new pass and analysis managers.
+  CodeGen::FPM = std::make_unique<llvm::FunctionPassManager>();
+  CodeGen::LAM = std::make_unique<llvm::LoopAnalysisManager>();
+  CodeGen::FAM = std::make_unique<llvm::FunctionAnalysisManager>();
+  CodeGen::CGAM = std::make_unique<llvm::CGSCCAnalysisManager>();
+  CodeGen::MAM = std::make_unique<llvm::ModuleAnalysisManager>();
+  CodeGen::PIC = std::make_unique<llvm::PassInstrumentationCallbacks>();
+  CodeGen::SI = std::make_unique<llvm::StandardInstrumentations>(
+      *CodeGen::Context, /*DebugLogging*/ true);
+
+  CodeGen::SI->registerCallbacks(*CodeGen::PIC, CodeGen::MAM.get());
+
+  // Transform passes for simple 'peephole' and bit-twiddling optimizations.
+  CodeGen::FPM->addPass(llvm::InstCombinePass());
+  // Reassociate expressions.
+  CodeGen::FPM->addPass(llvm::ReassociatePass());
+  // Eliminate common sub-expressions.
+  CodeGen::FPM->addPass(llvm::GVNPass());
+  // Simplify the control flow graph (ex: deleting unreachable blocks, ...)
+  CodeGen::FPM->addPass(llvm::SimplifyCFGPass());
+
+  // Register analysis passes used in these transform passes.
+  llvm::PassBuilder PB;
+  PB.registerModuleAnalyses(*CodeGen::MAM);
+  PB.registerFunctionAnalyses(*CodeGen::FAM);
+  PB.crossRegisterProxies(*CodeGen::LAM, *CodeGen::FAM, *CodeGen::CGAM,
+                          *CodeGen::MAM);
 }
 
 int BinOpPrecedence::getTokPrecedence() {

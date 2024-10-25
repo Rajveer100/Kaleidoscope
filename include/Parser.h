@@ -13,7 +13,6 @@
 #define KALEIDOSCOPE_PARSER_H
 
 #include "ASTExpr.h"
-#include "Logger.h"
 #include <map>
 
 /// The parser starts with the most simple literal,
@@ -90,7 +89,7 @@ class Parser {
 
 public:
   /// Initialises the module.
-  static void initialiseModule();
+  static void initialiseModuleAndPassManager();
 
   /// Parse the main loop for beginning the parsing pipeline.
   ///
