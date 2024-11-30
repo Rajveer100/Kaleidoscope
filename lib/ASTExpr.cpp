@@ -11,8 +11,12 @@
 #include "ASTExpr.h"
 #include "CodeGen.h"
 #include "Logger.h"
+#include "llvm/ADT/APFloat.h"
+#include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Type.h"
 
 llvm::Value *NumberExprAST::codegen() {
   return llvm::ConstantFP::get(*CodeGen::Context, llvm::APFloat(Val));
@@ -24,6 +28,63 @@ llvm::Value *VariableExprAST::codegen() {
   if (!V)
     return Logger::LogErrorV("Unknown variable name");
   return V;
+}
+
+llvm::Value *IfExprAST::codegen() {
+  llvm::Value *CondV = Cond->codegen();
+  if (!CondV)
+    return nullptr;
+
+  // Convert condition to a bool by comparing non-equal to 0.0.
+  CondV = CodeGen::Builder->CreateFCmpONE(
+      CondV, llvm::ConstantFP::get(*CodeGen::Context, llvm::APFloat(0.0)),
+      "ifcond");
+  llvm::Function *Function = CodeGen::Builder->GetInsertBlock()->getParent();
+
+  // Create blocks for the then and else cases. Insert the 'then' block at the
+  // end of the function.
+  llvm::BasicBlock *ThenBB =
+      llvm::BasicBlock::Create(*CodeGen::Context, "then", Function);
+  llvm::BasicBlock *ElseBB =
+      llvm::BasicBlock::Create(*CodeGen::Context, "else");
+  llvm::BasicBlock *MergeBB =
+      llvm::BasicBlock::Create(*CodeGen::Context, "ifcont");
+
+  CodeGen::Builder->CreateCondBr(CondV, ThenBB, ElseBB);
+
+  // Emit then value.
+  CodeGen::Builder->SetInsertPoint(ThenBB);
+
+  llvm::Value *ThenV = Then->codegen();
+  if (!ThenV)
+    return nullptr;
+
+  CodeGen::Builder->CreateBr(MergeBB);
+  // Codegen of 'Then' can change the current block, update the ThenBB for the
+  // PHI.
+  ThenBB = CodeGen::Builder->GetInsertBlock();
+
+  Function->insert(Function->end(), ElseBB);
+  CodeGen::Builder->SetInsertPoint(ElseBB);
+
+  llvm::Value *ElseV = Else->codegen();
+  if (!ElseV)
+    return nullptr;
+
+  CodeGen::Builder->CreateBr(MergeBB);
+  // Codegen of 'Else' can change the current block, update the ElseBB for the
+  // PHI.
+  ElseBB = CodeGen::Builder->GetInsertBlock();
+
+  // Emit merge block.
+  Function->insert(Function->end(), MergeBB);
+  CodeGen::Builder->SetInsertPoint(MergeBB);
+  llvm::PHINode *PN = CodeGen::Builder->CreatePHI(
+      llvm::Type::getDoubleTy(*CodeGen::Context), 2, "iftmp");
+
+  PN->addIncoming(ThenV, ThenBB);
+  PN->addIncoming(ElseV, ElseBB);
+  return PN;
 }
 
 llvm::Value *BinaryExprAST::codegen() {

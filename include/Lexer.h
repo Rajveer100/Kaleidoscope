@@ -24,7 +24,12 @@ enum Token {
 
   // Primary
   TOK_IDENTIFIER = -4,
-  TOK_NUMBER = -5
+  TOK_NUMBER = -5,
+
+  // Control
+  TOK_IF = -6,
+  TOK_THEN = -7,
+  TOK_ELSE = -8,
 };
 
 /// Lexer - The lexer returns tokens for valid input, else its ASCII value.

@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.28)
 project(Kaleidoscope)
 
 # Set C/C++ compiler
-set(CMAKE_C_COMPILER "/opt/homebrew/Cellar/llvm/18.1.8/bin/clang")
-set(CMAKE_CXX_COMPILER "/opt/homebrew/Cellar/llvm/18.1.8/bin/clang++")
+set(CMAKE_C_COMPILER "/opt/homebrew/Cellar/llvm/19.1.4/bin/clang")
+set(CMAKE_CXX_COMPILER "/opt/homebrew/Cellar/llvm/19.1.4/bin/clang++")
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 23 CACHE STRING "C++ standard to conform to")
@@ -15,7 +15,7 @@ set(CMAKE_BUILD_TYPE DEBUG)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Set LLVM path
-set(LLVM_DIR /opt/homebrew/Cellar/llvm/18.1.8/lib/cmake/llvm)
+set(LLVM_DIR /opt/homebrew/Cellar/llvm/19.1.4/lib/cmake/llvm)
 
 # Find package LLVM and MLIR
 find_package(LLVM REQUIRED CONFIG)

@@ -87,6 +87,8 @@ std::unique_ptr<ExprAST> Parser::parsePrimary() {
     return parseNumberExpr();
   case '(':
     return parseParenExpr();
+  case TOK_IF:
+    return parseIfExpr();
   }
 }
 
@@ -179,6 +181,34 @@ std::unique_ptr<FunctionAST> Parser::parseTopLevelExpr() {
     return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
   }
   return nullptr;
+}
+
+std::unique_ptr<ExprAST> Parser::parseIfExpr() {
+  Lexer::getNextToken(); // eat the if.
+
+  // condition.
+  auto Cond = parseExpression();
+  if (!Cond)
+    return nullptr;
+
+  if (Lexer::CurTok != TOK_THEN)
+    return Logger::LogError("expected then");
+  Lexer::getNextToken(); // eat the then.
+
+  auto Then = parseExpression();
+  if (!Then)
+    return nullptr;
+
+  if (Lexer::CurTok != TOK_ELSE)
+    return Logger::LogError("expected else");
+  Lexer::getNextToken(); // eat the else.
+
+  auto Else = parseExpression();
+  if (!Else)
+    return nullptr;
+
+  return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then),
+                                     std::move(Else));
 }
 
 void Parser::handleDefinition() {

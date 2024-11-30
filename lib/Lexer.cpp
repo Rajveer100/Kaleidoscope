@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Lexer.h"
+#include <cstdlib>
 
 int Lexer::getTok() {
   static int lastChar = ' ';
@@ -27,6 +28,12 @@ int Lexer::getTok() {
       return TOK_DEF;
     if (IdentifierStr == "extern")
       return TOK_EXTERN;
+    if (IdentifierStr == "if")
+      return TOK_IF;
+    if (IdentifierStr == "then")
+      return TOK_THEN;
+    if (IdentifierStr == "else")
+      return TOK_ELSE;
     return TOK_IDENTIFIER;
   }
 

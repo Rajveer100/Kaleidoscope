@@ -78,6 +78,11 @@ class Parser {
   /// TopLevelExpr ::= Expression
   static std::unique_ptr<FunctionAST> parseTopLevelExpr();
 
+  /// Parse if/then/else expressions.
+  ///
+  /// IfExpr ::= 'if' expression 'then' expression 'else' expression
+  static std::unique_ptr<ExprAST> parseIfExpr();
+
   /// Helper function to handle prototype definitions.
   static void handleDefinition();
 
