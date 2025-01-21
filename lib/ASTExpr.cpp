@@ -101,7 +101,7 @@ llvm::Value *BinaryExprAST::codegen() {
   case '*':
     return CodeGen::Builder->CreateFMul(L, R, "multmp");
   case '<':
-    L = CodeGen::Builder->CreateFCmpULE(L, R, "cmptmp");
+    L = CodeGen::Builder->CreateFCmpULT(L, R, "cmptmp");
     // Convert bool 0/1 to double 0.0/1.0
     return CodeGen::Builder->CreateUIToFP(
         L, llvm::Type::getDoubleTy(*CodeGen::Context), "booltmp");
