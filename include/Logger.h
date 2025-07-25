@@ -17,13 +17,22 @@
 class Logger {
 public:
   /// Error handling helper function for ExprAST.
-  static std::unique_ptr<ExprAST> LogError(const char *Str);
+  static std::unique_ptr<ExprAST> LogError(const char *Str) {
+    fprintf(stderr, "Error: %s\n", Str);
+    return nullptr;
+  }
 
   /// Error handling helper function for ProtoTypeAST.
-  static std::unique_ptr<ProtoTypeAST> LogErrorP(const char *Str);
+  static std::unique_ptr<ProtoTypeAST> LogErrorP(const char *Str) {
+    LogError(Str);
+    return nullptr;
+  }
 
   /// Error handling helper function for Value.
-  static llvm::Value *LogErrorV(const char *Str);
+  static llvm::Value *LogErrorV(const char *Str) {
+    LogError(Str);
+    return nullptr;
+  }
 };
 
 #endif // KALEIDOSCOPE_LOGGER_H

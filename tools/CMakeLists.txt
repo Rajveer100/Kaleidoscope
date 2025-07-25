@@ -1,11 +1,29 @@
-# Set source file for main driver
-set(SOURCES MainDriver.cpp)
+# Get LLVM libs property.
+llvm_map_components_to_libnames(LLVM_LIBS 
+  Support
+  Core 
+  IRReader 
+  Analysis
+  AsmParser
+  AsmPrinter
+  ExecutionEngine
+  BitReader
+  BitWriter
+  TransformUtils
+  CodeGen
+  Target
+  Object
+  Remarks
+  OrcJIT
+  RuntimeDyld
+  Support
+  AArch64
+)
 
-# Create main driver executable
-add_executable(KaleidoscopeMain ${SOURCES})
+# Add main driver executable.
+add_llvm_executable(main-driver MainDriver.cpp)
 
-# Include necessary directories
-target_include_directories(KaleidoscopeMain PUBLIC ${PROJECT_SOURCE_DIR}/include)
+# Update compile flags and link libraries.
+llvm_update_compile_flags(main-driver)
 
-# Link against library and LLVM components
-target_link_libraries(KaleidoscopeMain PRIVATE LLVMKaleidoscope ${llvm_libs})
+target_link_libraries(main-driver PRIVATE LLVMKaleidoscope ${LLVM_LIBS})

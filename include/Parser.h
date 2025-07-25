@@ -13,28 +13,32 @@
 #define KALEIDOSCOPE_PARSER_H
 
 #include "ASTExpr.h"
+#include "CodeGen.h"
+#include "Lexer.h"
+#include "Logger.h"
 #include <map>
 
 /// The parser starts with the most simple literal,
 /// which are then used by compound literals to break down
 /// each production in the grammar.
 class Parser {
+public:
   /// Parse numerical expressions.
   ///
   /// NumberExpr ::= Number
-  static std::unique_ptr<ExprAST> parseNumberExpr();
+  std::unique_ptr<ExprAST> ParseNumberExpr();
 
   /// Parse expressions with parenthesis.
   ///
   /// ParenExpr ::= '(' Expression ')'
-  static std::unique_ptr<ExprAST> parseParenExpr();
+  std::unique_ptr<ExprAST> ParseParenExpr();
 
   /// Parse identifier expressions.
   ///
   /// IdentifierExpr
   ///   ::= Identifier
   ///   ::= Identifier '(' expression* ')'
-  static std::unique_ptr<ExprAST> parseIdentifierExpr();
+  std::unique_ptr<ExprAST> ParseIdentifierExpr();
 
   /// Parse primary expressions.
   ///
@@ -42,75 +46,102 @@ class Parser {
   ///   ::= IdentifierExpr
   ///   ::= NumberExpr
   ///   ::= ParenExpr
-  static std::unique_ptr<ExprAST> parsePrimary();
+  std::unique_ptr<ExprAST> ParsePrimary();
 
   /// Parse primary binorph expressions.
   ///
   /// Expression
   ///   ::= Primary Binorphs
-  static std::unique_ptr<ExprAST> parseExpression();
+  std::unique_ptr<ExprAST> ParseExpression();
 
   /// Parse RHS with the given LHS for the binorph.
   ///
   /// Binorphs
   ///   ::= ('+' primary)*
-  static std::unique_ptr<ExprAST> parseBinOpRHS(int ExprPrec,
-                                                std::unique_ptr<ExprAST> LHS);
+  std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
+                                         std::unique_ptr<ExprAST> LHS);
 
   /// Parse prototype expressions.
   ///
   /// ProtoType
   ///   ::= id '(' id* ')'
-  static std::unique_ptr<ProtoTypeAST> parseProtoType();
+  std::unique_ptr<ProtoTypeAST> ParseProtoType();
 
   /// Parse definition for the prototype expression.
   ///
   /// Definition ::= 'def' PrototTypeExpr
-  static std::unique_ptr<FunctionAST> parseDefinition();
+  std::unique_ptr<FunctionAST> ParseDefinition();
 
   /// Parse external prototype expressions.
   ///
   /// External ::= 'extern' ProtoType
-  static std::unique_ptr<ProtoTypeAST> parseExtern();
+  std::unique_ptr<ProtoTypeAST> ParseExtern();
 
   /// Parse top level expressions.
   ///
   /// TopLevelExpr ::= Expression
-  static std::unique_ptr<FunctionAST> parseTopLevelExpr();
+  std::unique_ptr<FunctionAST> ParseTopLevelExpr();
 
   /// Parse if/then/else expressions.
   ///
   /// IfExpr ::= 'if' expression 'then' expression 'else' expression
-  static std::unique_ptr<ExprAST> parseIfExpr();
+  std::unique_ptr<ExprAST> ParseIfExpr();
+
+  /// Parse for/in expressions.
+  ///
+  /// ForExpr ::= 'for' identifier '=' expr ',' expr (',' expr)? 'in' expression
+  std::unique_ptr<ExprAST> ParseForExpr();
 
   /// Helper function to handle prototype definitions.
-  static void handleDefinition();
+  void HandleDefinition();
 
   /// Helper function to handle external prototype expressions.
-  static void handleExtern();
+  void HandleExtern();
 
   /// Helper function to handle top level expressions.
-  static void handleTopLevelExpression();
+  void HandleTopLevelExpression();
+
+private:
+  /// Holds the precedence value for a valid binary operator.
+  class OpPrecedence {
+    std::map<char, int> BinOpPrecedence;
+
+  public:
+    /// Get the precedence of the operator token.
+    int GetBinOpPrecedence(Lexer &CurLexer) {
+      int curToken = CurLexer.getCurTok();
+      if (!isascii(curToken))
+        return -1;
+
+      // Check if the Op is declared.
+      int TokPrec = BinOpPrecedence[curToken];
+      if (TokPrec <= 0)
+        return -1;
+      return TokPrec;
+    }
+
+    /// Initialise standard binary operators.
+    OpPrecedence() {
+      BinOpPrecedence['<'] = 10;
+      BinOpPrecedence['+'] = 20;
+      BinOpPrecedence['-'] = 30;
+      BinOpPrecedence['*'] = 40; // highest
+    }
+  };
 
 public:
-  /// Initialises the module.
-  static void initialiseModuleAndPassManager();
+  Lexer CurLexer;
 
   /// Parse the main loop for beginning the parsing pipeline.
   ///
   /// Top ::= Definition | External | Expression | ';'
-  static void mainLoop();
-};
+  void MainLoop(Lexer &Lexer);
 
-/// Holds the precedence value for a valid binary operator.
-class BinOpPrecedence {
-  inline static std::map<char, int> precedence;
+  CodeGen CG;
 
-public:
-  /// Get the precedence of the operator token.
-  static int getTokPrecedence();
-  /// Initialise standard binary operators.
-  static void init();
+  OpPrecedence BinOpPrecedence;
+
+  Parser() { CG.InitialiseModuleAndPassManager(); }
 };
 
 #endif // KALEIDOSCOPE_PARSER_H

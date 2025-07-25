@@ -16,11 +16,13 @@
 #include <string>
 #include <vector>
 
+class CodeGen;
+
 /// ExprAST - Base class for all expression nodes.
 class ExprAST {
 public:
   virtual ~ExprAST() = default;
-  virtual llvm::Value *codegen() = 0;
+  virtual llvm::Value *codegen(CodeGen &CG) = 0;
 };
 
 /// NumberExprAST - Expression class for numeric literals.
@@ -29,7 +31,7 @@ class NumberExprAST : public ExprAST {
 
 public:
   NumberExprAST(double Val) : Val(Val) {}
-  llvm::Value *codegen() override;
+  llvm::Value *codegen(CodeGen &CG) override;
 };
 
 /// VariableExprAST - Expression class for referencing a variable.
@@ -38,7 +40,7 @@ class VariableExprAST : public ExprAST {
 
 public:
   VariableExprAST(const std::string &Name) : Name(Name) {}
-  llvm::Value *codegen() override;
+  llvm::Value *codegen(CodeGen &CG) override;
 };
 
 /// IfExprAST - This class represents an expression for if/then/else.
@@ -50,7 +52,22 @@ public:
             std::unique_ptr<ExprAST> Else)
       : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
 
-  llvm::Value *codegen() override;
+  llvm::Value *codegen(CodeGen &CG) override;
+};
+
+/// ForExprAST - Expression class for for/in.
+class ForExprAST : public ExprAST {
+  std::string VarName;
+  std::unique_ptr<ExprAST> Start, End, Step, Body;
+
+public:
+  ForExprAST(const std::string &VarName, std::unique_ptr<ExprAST> Start,
+             std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Step,
+             std::unique_ptr<ExprAST> Body)
+      : VarName(VarName), Start(std::move(Start)), End(std::move(End)),
+        Step(std::move(Step)), Body(std::move(Body)) {}
+
+  llvm::Value *codegen(CodeGen &CG) override;
 };
 
 /// BinaryExprAST - Expression class for a binary operator.
@@ -62,7 +79,7 @@ public:
   BinaryExprAST(char Op, std::unique_ptr<ExprAST> LHS,
                 std::unique_ptr<ExprAST> RHS)
       : Op(Op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
-  llvm::Value *codegen() override;
+  llvm::Value *codegen(CodeGen &CG) override;
 };
 
 /// CallExprAST - Expression class for function calls.
@@ -74,7 +91,7 @@ public:
   CallExprAST(const std::string &Callee,
               std::vector<std::unique_ptr<ExprAST>> Args)
       : Callee(Callee), Args(std::move(Args)) {}
-  llvm::Value *codegen() override;
+  llvm::Value *codegen(CodeGen &CG) override;
 };
 
 /// ProtoTypeAST - This class represents the "prototype" for a function,
@@ -89,7 +106,7 @@ public:
 
   /// Get the prototype name.
   const std::string &getName() const;
-  llvm::Function *codegen();
+  llvm::Function *codegen(CodeGen &CG);
 };
 
 /// FunctionAST - This class represents a function definition itself.
@@ -101,7 +118,7 @@ public:
   FunctionAST(std::unique_ptr<ProtoTypeAST> Proto,
               std::unique_ptr<ExprAST> Body)
       : Proto(std::move(Proto)), Body(std::move(Body)) {}
-  llvm::Function *codegen();
+  llvm::Function *codegen(CodeGen &CG);
 };
 
 #endif // KALEIDOSCOPE_ASTEXPR_H

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-if [[ "$1" == "clean-build" ]]; then
+if [[ "$1" == "--clean" ]]; then
   rm -rf build/
   rm compile_commands.json
 
@@ -10,4 +10,4 @@ fi
 
 ninja -C build/
 
-./build/tools/KaleidoscopeMain
+./build/bin/main-driver

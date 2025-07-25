@@ -9,33 +9,42 @@
 //===----------------------------------------------------------------------===//
 
 #include "CodeGen.h"
-#include "KaleidoscopeJIT.h"
 #include "Lexer.h"
 #include "Parser.h"
 #include "llvm/Support/TargetSelect.h"
+#include <cstdio>
+
+extern "C" double putchard(double x) {
+  fputc((char)x, stderr);
+  return 0;
+}
+
+extern "C" double printd(double x) {
+  fprintf(stderr, "%f\n", x);
+  return 0;
+}
 
 int main() {
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmPrinter();
   llvm::InitializeNativeTargetAsmParser();
 
-  // Install standard binary operators.
-  BinOpPrecedence::init();
+  LLVMInitializeAArch64Target();
+  LLVMInitializeAArch64AsmPrinter();
+  LLVMInitializeAArch64AsmParser();
+
+  Lexer Lexer;
+  Parser Parser;
 
   // Prime the first token.
   fprintf(stderr, "ready> ");
-  Lexer::getNextToken();
-
-  CodeGen::JIT = CodeGen::ExitOnError(llvm::orc::KaleidoscopeJIT::Create());
-
-  // Make the module, which holds all the code.
-  Parser::initialiseModuleAndPassManager();
+  Lexer.getNextTok();
 
   // Run the main loop.
-  Parser::mainLoop();
+  Parser.MainLoop(Lexer);
 
   // Print out all the generated code.
-  CodeGen::Module->print(llvm::errs(), nullptr);
+  Parser.CG.Module->print(llvm::errs(), nullptr);
 
   return 0;
 }

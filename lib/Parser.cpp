@@ -9,101 +9,88 @@
 //===----------------------------------------------------------------------===//
 
 #include "Parser.h"
-#include "ASTExpr.h"
-#include "CodeGen.h"
-#include "Lexer.h"
-#include "Logger.h"
-#include "llvm/Analysis/CGSCCPassManager.h"
-#include "llvm/Analysis/LoopAnalysisManager.h"
-#include "llvm/ExecutionEngine/Orc/ThreadSafeModule.h"
-#include "llvm/IR/PassInstrumentation.h"
-#include "llvm/IR/PassManager.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/StandardInstrumentations.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Transforms/InstCombine/InstCombine.h"
-#include "llvm/Transforms/Scalar/GVN.h"
-#include "llvm/Transforms/Scalar/Reassociate.h"
-#include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Support/raw_ostream.h"
 
-std::unique_ptr<ExprAST> Parser::parseNumberExpr() {
-  auto Result = std::make_unique<NumberExprAST>(Lexer::NumVal);
-  Lexer::getNextToken(); // consume the number
+std::unique_ptr<ExprAST> Parser::ParseNumberExpr() {
+  auto Result = std::make_unique<NumberExprAST>(CurLexer.getNumVal());
+  CurLexer.getNextTok(); // consume the number
   return std::move(Result);
 }
 
-std::unique_ptr<ExprAST> Parser::parseParenExpr() {
-  Lexer::getNextToken(); // eat (.
-  auto V = Parser::parseExpression();
+std::unique_ptr<ExprAST> Parser::ParseParenExpr() {
+  CurLexer.getNextTok(); // eat (.
+  auto V = ParseExpression();
   if (!V)
     return nullptr;
 
-  if (Lexer::CurTok != ')')
+  if (CurLexer.getCurTok() != ')')
     return Logger::LogError("expected ')'");
-  Lexer::getNextToken(); // eat ).
+  CurLexer.getNextTok(); // eat ).
   return V;
 }
 
-std::unique_ptr<ExprAST> Parser::parseIdentifierExpr() {
-  std::string IdName = Lexer::IdentifierStr;
+std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr() {
+  std::string IdName = CurLexer.getIdentifierStr();
 
-  Lexer::getNextToken(); // eat identifier.
+  CurLexer.getNextTok(); // eat identifier.
 
-  if (Lexer::CurTok != '(') // Simple variable reference.
+  if (CurLexer.getCurTok() != '(') // Simple variable reference.
     return std::make_unique<VariableExprAST>(IdName);
 
   // Call.
-  Lexer::getNextToken(); // eat (.
+  CurLexer.getNextTok(); // eat (.
   std::vector<std::unique_ptr<ExprAST>> Args;
-  if (Lexer::CurTok != ')') {
+  if (CurLexer.getCurTok() != ')') {
     while (true) {
-      if (auto Arg = Parser::parseExpression())
+      if (auto Arg = ParseExpression())
         Args.push_back(std::move(Arg));
       else
         return nullptr;
 
-      if (Lexer::CurTok == ')')
+      if (CurLexer.getCurTok() == ')')
         break;
 
-      if (Lexer::CurTok != ',')
+      if (CurLexer.getCurTok() != ',')
         return Logger::LogError("Expected ')' or ',' in argument list");
-      Lexer::getNextToken();
+      CurLexer.getNextTok();
     }
   }
 
   // eat ).
-  Lexer::getNextToken();
+  CurLexer.getNextTok();
 
   return std::make_unique<CallExprAST>(IdName, std::move(Args));
 }
 
-std::unique_ptr<ExprAST> Parser::parsePrimary() {
-  switch (Lexer::CurTok) {
+std::unique_ptr<ExprAST> Parser::ParsePrimary() {
+  switch (CurLexer.getCurTok()) {
   default:
     return Logger::LogError("Unknown token when expecting an expression");
   case TOK_IDENTIFIER:
-    return parseIdentifierExpr();
+    return ParseIdentifierExpr();
   case TOK_NUMBER:
-    return parseNumberExpr();
+    return ParseNumberExpr();
   case '(':
-    return parseParenExpr();
+    return ParseParenExpr();
   case TOK_IF:
-    return parseIfExpr();
+    return ParseIfExpr();
+  case TOK_FOR:
+    return ParseForExpr();
   }
 }
 
-std::unique_ptr<ExprAST> Parser::parseExpression() {
-  auto LHS = parsePrimary();
+std::unique_ptr<ExprAST> Parser::ParseExpression() {
+  auto LHS = ParsePrimary();
   if (!LHS)
     return nullptr;
-  return parseBinOpRHS(0, std::move(LHS));
+  return ParseBinOpRHS(0, std::move(LHS));
 }
 
-std::unique_ptr<ExprAST> Parser::parseBinOpRHS(int ExprPrec,
+std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec,
                                                std::unique_ptr<ExprAST> LHS) {
   // If this is a binary operator, find its precedence.
   while (true) {
-    int TokPrec = BinOpPrecedence::getTokPrecedence();
+    int TokPrec = BinOpPrecedence.GetBinOpPrecedence(CurLexer);
 
     // If this binary operator that binds at least as tightly
     // as the current loop, consume it.
@@ -111,20 +98,20 @@ std::unique_ptr<ExprAST> Parser::parseBinOpRHS(int ExprPrec,
       return LHS;
 
     // This is a binary operator.
-    int BinOp = Lexer::CurTok;
-    Lexer::getNextToken(); // eat binary operator.
+    int BinOp = CurLexer.getCurTok();
+    CurLexer.getNextTok(); // eat binary operator.
 
     // Parse the primary expression after the binary operator.
-    auto RHS = parsePrimary();
+    auto RHS = ParsePrimary();
     if (!RHS)
       return nullptr;
 
     // If binary operator binds less tightly with RHS than
     // the operator after RHS, the pending operator will take
     // the RHS as its LHS.
-    int NextPrec = BinOpPrecedence::getTokPrecedence();
+    int NextPrec = BinOpPrecedence.GetBinOpPrecedence(CurLexer);
     if (TokPrec < NextPrec) {
-      RHS = parseBinOpRHS(TokPrec + 1, std::move(RHS));
+      RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS));
       if (!RHS)
         return nullptr;
     }
@@ -134,47 +121,47 @@ std::unique_ptr<ExprAST> Parser::parseBinOpRHS(int ExprPrec,
   } // back to the while loop.
 }
 
-std::unique_ptr<ProtoTypeAST> Parser::parseProtoType() {
-  if (Lexer::CurTok != TOK_IDENTIFIER)
+std::unique_ptr<ProtoTypeAST> Parser::ParseProtoType() {
+  if (CurLexer.getCurTok() != TOK_IDENTIFIER)
     return Logger::LogErrorP("Expected function name in prototype");
 
-  std::string FnName = Lexer::IdentifierStr;
-  Lexer::getNextToken();
+  std::string FnName = CurLexer.getIdentifierStr();
+  CurLexer.getNextTok();
 
-  if (Lexer::CurTok != '(')
+  if (CurLexer.getCurTok() != '(')
     return Logger::LogErrorP("Expected '(' in prototype");
 
   // Read the argument list.
   std::vector<std::string> ArgNames;
-  while (Lexer::getNextToken() == TOK_IDENTIFIER)
-    ArgNames.push_back(Lexer::IdentifierStr);
-  if (Lexer::CurTok != ')')
+  while (CurLexer.getNextTok() == TOK_IDENTIFIER)
+    ArgNames.push_back(CurLexer.getIdentifierStr());
+  if (CurLexer.getCurTok() != ')')
     return Logger::LogErrorP("Expected ')' in prototype");
 
   // done.
-  Lexer::getNextToken(); // eat ).
+  CurLexer.getNextTok(); // eat ).
 
   return std::make_unique<ProtoTypeAST>(FnName, std::move(ArgNames));
 }
 
-std::unique_ptr<FunctionAST> Parser::parseDefinition() {
-  Lexer::getNextToken(); // eat def.
-  auto Proto = parseProtoType();
+std::unique_ptr<FunctionAST> Parser::ParseDefinition() {
+  CurLexer.getNextTok(); // eat def.
+  auto Proto = ParseProtoType();
   if (!Proto)
     return nullptr;
 
-  if (auto E = parseExpression())
+  if (auto E = ParseExpression())
     return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
   return nullptr;
 }
 
-std::unique_ptr<ProtoTypeAST> Parser::parseExtern() {
-  Lexer::getNextToken(); // eat extern.
-  return parseProtoType();
+std::unique_ptr<ProtoTypeAST> Parser::ParseExtern() {
+  CurLexer.getNextTok(); // eat extern.
+  return ParseProtoType();
 }
 
-std::unique_ptr<FunctionAST> Parser::parseTopLevelExpr() {
-  if (auto E = parseExpression()) {
+std::unique_ptr<FunctionAST> Parser::ParseTopLevelExpr() {
+  if (auto E = ParseExpression()) {
     // Make anonymous Proto.
     auto Proto = std::make_unique<ProtoTypeAST>("__anon_expr",
                                                 std::vector<std::string>());
@@ -183,27 +170,27 @@ std::unique_ptr<FunctionAST> Parser::parseTopLevelExpr() {
   return nullptr;
 }
 
-std::unique_ptr<ExprAST> Parser::parseIfExpr() {
-  Lexer::getNextToken(); // eat the if.
+std::unique_ptr<ExprAST> Parser::ParseIfExpr() {
+  CurLexer.getNextTok(); // eat the if.
 
   // condition.
-  auto Cond = parseExpression();
+  auto Cond = ParseExpression();
   if (!Cond)
     return nullptr;
 
-  if (Lexer::CurTok != TOK_THEN)
+  if (CurLexer.getCurTok() != TOK_THEN)
     return Logger::LogError("expected then");
-  Lexer::getNextToken(); // eat the then.
+  CurLexer.getNextTok(); // eat the then.
 
-  auto Then = parseExpression();
+  auto Then = ParseExpression();
   if (!Then)
     return nullptr;
 
-  if (Lexer::CurTok != TOK_ELSE)
+  if (CurLexer.getCurTok() != TOK_ELSE)
     return Logger::LogError("expected else");
-  Lexer::getNextToken(); // eat the else.
+  CurLexer.getNextTok(); // eat the else.
 
-  auto Else = parseExpression();
+  auto Else = ParseExpression();
   if (!Else)
     return nullptr;
 
@@ -211,50 +198,95 @@ std::unique_ptr<ExprAST> Parser::parseIfExpr() {
                                      std::move(Else));
 }
 
-void Parser::handleDefinition() {
-  if (auto FnAST = parseDefinition()) {
-    if (auto *FnIR = FnAST->codegen()) {
+std::unique_ptr<ExprAST> Parser::ParseForExpr() {
+  CurLexer.getNextTok(); // eat the for.
+
+  if (CurLexer.getCurTok() != TOK_IDENTIFIER)
+    return Logger::LogError("expected identifier after for");
+
+  std::string IdName = CurLexer.getIdentifierStr();
+  CurLexer.getNextTok(); // eat identifier.
+
+  if (CurLexer.getCurTok() != '=')
+    return Logger::LogError("expected '=' after for");
+  CurLexer.getNextTok(); // eat '='.
+
+  auto Start = ParseExpression();
+  if (!Start)
+    return nullptr;
+  if (CurLexer.getCurTok() != ',')
+    return Logger::LogError("expected ',' after for start value");
+  CurLexer.getNextTok();
+
+  auto End = ParseExpression();
+  if (!End)
+    return nullptr;
+
+  // The step value is optional.
+  std::unique_ptr<ExprAST> Step;
+  if (CurLexer.getCurTok() == ',') {
+    CurLexer.getNextTok();
+    Step = ParseExpression();
+    if (!Step)
+      return nullptr;
+  }
+
+  if (CurLexer.getCurTok() != TOK_IN)
+    return Logger::LogError("expected 'in' after for");
+  CurLexer.getNextTok(); // eat 'in'.
+
+  auto Body = ParseExpression();
+  if (!Body)
+    return nullptr;
+
+  return std::make_unique<ForExprAST>(IdName, std::move(Start), std::move(End),
+                                      std::move(Step), std::move(Body));
+}
+
+void Parser::HandleDefinition() {
+  if (auto FnAST = ParseDefinition()) {
+    if (auto *FnIR = FnAST->codegen(CG)) {
       fprintf(stderr, "Read a function definition:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
 
-      CodeGen::ExitOnError(CodeGen::JIT->addModule(llvm::orc::ThreadSafeModule(
-          std::move(CodeGen::Module), std::move(CodeGen::Context))));
-      initialiseModuleAndPassManager();
+      CG.ExitOnError(CG.JIT->addModule(llvm::orc::ThreadSafeModule(
+          std::move(CG.Module), std::move(CG.Context))));
+      CG.InitialiseModuleAndPassManager();
     }
   } else {
     // Skip token for error recovery.
-    Lexer::getNextToken();
+    CurLexer.getNextTok();
   }
 }
 
-void Parser::handleExtern() {
-  if (auto ProtoAST = parseExtern()) {
-    if (auto *FnIR = ProtoAST->codegen()) {
+void Parser::HandleExtern() {
+  if (auto ProtoAST = ParseExtern()) {
+    if (auto *FnIR = ProtoAST->codegen(CG)) {
       fprintf(stderr, "Read extern:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
-      CodeGen::FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
+      CG.FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
     // Skip token for error recovery.
-    Lexer::getNextToken();
+    CurLexer.getNextTok();
   }
 }
 
-void Parser::handleTopLevelExpression() {
+void Parser::HandleTopLevelExpression() {
   // Evaluate top-level expressions as an anonymous function.
-  if (auto FnAST = parseTopLevelExpr()) {
-    if (FnAST->codegen()) {
-      auto RT = CodeGen::JIT->getMainJITDylib().createResourceTracker();
+  if (auto FnAST = ParseTopLevelExpr()) {
+    if (auto FnIR = FnAST->codegen(CG)) {
+      FnIR->print(llvm::errs());
+      auto RT = CG.JIT->getMainJITDylib().createResourceTracker();
 
-      auto TSM = llvm::orc::ThreadSafeModule(std::move(CodeGen::Module),
-                                             std::move(CodeGen::Context));
-      CodeGen::ExitOnError(CodeGen::JIT->addModule(std::move(TSM), RT));
-      initialiseModuleAndPassManager();
+      auto TSM = llvm::orc::ThreadSafeModule(std::move(CG.Module),
+                                             std::move(CG.Context));
+      CG.ExitOnError(CG.JIT->addModule(std::move(TSM), RT));
+      CG.InitialiseModuleAndPassManager();
 
-      auto ExprSymbol =
-          CodeGen::ExitOnError(CodeGen::JIT->lookup("__anon_expr"));
+      auto ExprSymbol = CG.ExitOnError(CG.JIT->lookup("__anon_expr"));
 
       double (*FP)() = ExprSymbol.getAddress().toPtr<double (*)()>();
       fprintf(stderr, "Evaluated to %f\n", FP());
@@ -268,88 +300,32 @@ void Parser::handleTopLevelExpression() {
       // Remove the anonymous expression.
       // FnIR->eraseFromParent();
 
-      CodeGen::ExitOnError(RT->remove());
+      CG.ExitOnError(RT->remove());
     }
   } else {
     // Skip token for error recovery.
-    Lexer::getNextToken();
+    CurLexer.getNextTok();
   }
 }
 
-void Parser::initialiseModuleAndPassManager() {
-  // Open a new context and module.
-  CodeGen::Context = std::make_unique<llvm::LLVMContext>();
-  CodeGen::Module =
-      std::make_unique<llvm::Module>("KaleidoscopeJIT", *CodeGen::Context);
-  CodeGen::Module->setDataLayout(CodeGen::JIT->getDataLayout());
-
-  // Create a new builder for the module.
-  CodeGen::Builder = std::make_unique<llvm::IRBuilder<>>(*CodeGen::Context);
-
-  // Create new pass and analysis managers.
-  CodeGen::FPM = std::make_unique<llvm::FunctionPassManager>();
-  CodeGen::LAM = std::make_unique<llvm::LoopAnalysisManager>();
-  CodeGen::FAM = std::make_unique<llvm::FunctionAnalysisManager>();
-  CodeGen::CGAM = std::make_unique<llvm::CGSCCAnalysisManager>();
-  CodeGen::MAM = std::make_unique<llvm::ModuleAnalysisManager>();
-  CodeGen::PIC = std::make_unique<llvm::PassInstrumentationCallbacks>();
-  CodeGen::SI = std::make_unique<llvm::StandardInstrumentations>(
-      *CodeGen::Context, /*DebugLogging*/ true);
-
-  CodeGen::SI->registerCallbacks(*CodeGen::PIC, CodeGen::MAM.get());
-
-  // Transform passes for simple 'peephole' and bit-twiddling optimizations.
-  CodeGen::FPM->addPass(llvm::InstCombinePass());
-  // Reassociate expressions.
-  CodeGen::FPM->addPass(llvm::ReassociatePass());
-  // Eliminate common sub-expressions.
-  CodeGen::FPM->addPass(llvm::GVNPass());
-  // Simplify the control flow graph (ex: deleting unreachable blocks, ...)
-  CodeGen::FPM->addPass(llvm::SimplifyCFGPass());
-
-  // Register analysis passes used in these transform passes.
-  llvm::PassBuilder PB;
-  PB.registerModuleAnalyses(*CodeGen::MAM);
-  PB.registerFunctionAnalyses(*CodeGen::FAM);
-  PB.crossRegisterProxies(*CodeGen::LAM, *CodeGen::FAM, *CodeGen::CGAM,
-                          *CodeGen::MAM);
-}
-
-int BinOpPrecedence::getTokPrecedence() {
-  if (!isascii(Lexer::CurTok))
-    return -1;
-
-  // Check if the Op is declared.
-  int TokPrec = precedence[Lexer::CurTok];
-  if (TokPrec <= 0)
-    return -1;
-  return TokPrec;
-}
-
-void BinOpPrecedence::init() {
-  precedence['<'] = 10;
-  precedence['+'] = 20;
-  precedence['-'] = 30;
-  precedence['*'] = 40; // highest
-}
-
-void Parser::mainLoop() {
+void Parser::MainLoop(Lexer &Lexer) {
+  CurLexer = Lexer;
   while (true) {
     fprintf(stderr, "ready> ");
-    switch (Lexer::CurTok) {
+    switch (CurLexer.getCurTok()) {
     case TOK_EOF:
       return;
     case ';':
-      Lexer::getNextToken();
+      CurLexer.getNextTok();
       break;
     case TOK_DEF:
-      handleDefinition();
+      HandleDefinition();
       break;
     case TOK_EXTERN:
-      handleExtern();
+      HandleExtern();
       break;
     default:
-      handleTopLevelExpression();
+      HandleTopLevelExpression();
       break;
     }
   }
